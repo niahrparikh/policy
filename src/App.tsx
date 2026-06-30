@@ -6,7 +6,10 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import ClientsList from "./components/ClientsList";
 import PoliciesList from "./components/PoliciesList";
-import Reports from "./components/Reports";
+import RenewalsCalendar from "./components/RenewalsCalendar";
+import DocumentsHub from "./components/DocumentsHub";
+import WhatsAppInbox from "./components/WhatsAppInbox";
+import AIAssistPanel from "./components/AIAssistPanel";
 import Settings from "./components/Settings";
 import { AlertTriangle, ShieldAlert, Sparkles, X } from "lucide-react";
 
@@ -74,7 +77,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center font-sans">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0504AA]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#006D77]"></div>
         <p className="mt-4 text-sm text-slate-500 font-semibold tracking-wide">
           Syncing secure policyholdings...
         </p>
@@ -90,7 +93,7 @@ export default function App() {
   const isTrialExpired = user.subscription_status === "expired";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row font-sans text-slate-900 selection:bg-[#E8E8FF] selection:text-[#0504AA]">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row font-sans text-slate-900 selection:bg-[#FF6F3C]/10 selection:text-[#FF6F3C]">
       {/* Navigation Layout */}
       <Sidebar
         user={user}
@@ -128,16 +131,16 @@ export default function App() {
 
         {/* Global Floating Tips / System Messages */}
         {!isTrialExpired && user.subscription_status !== "active" && (
-          <div className="bg-[#E8E8FF] text-[#0504AA] px-4 py-2 border-b border-[#0504AA]/10 flex items-center justify-between text-xs font-semibold shrink-0">
+          <div className="bg-[#FF6F3C]/5 text-[#FF6F3C] px-4 py-2 border-b border-[#FF6F3C]/10 flex items-center justify-between text-xs font-semibold shrink-0">
             <div className="flex items-center space-x-1.5">
-              <Sparkles className="h-4 w-4 text-[#0504AA]" />
+              <Sparkles className="h-4 w-4 text-[#FF6F3C] animate-pulse" />
               <span>
                 You are currently exploring <strong>policysync.in</strong> on a free trial license.
               </span>
             </div>
             <button
               onClick={() => setActiveTab("settings")}
-              className="underline text-[11px] font-bold hover:text-[#04038F]"
+              className="underline text-[11px] font-bold hover:text-[#FF6F3C]/80"
             >
               Unlock Premium Upgrades &rarr;
             </button>
@@ -169,8 +172,20 @@ export default function App() {
             />
           )}
 
-          {activeTab === "reports" && (
-            <Reports user={user} />
+          {activeTab === "renewals" && (
+            <RenewalsCalendar />
+          )}
+
+          {activeTab === "documents" && (
+            <DocumentsHub />
+          )}
+
+          {activeTab === "whatsapp" && (
+            <WhatsAppInbox />
+          )}
+
+          {activeTab === "aiassist" && (
+            <AIAssistPanel />
           )}
 
           {activeTab === "settings" && (
