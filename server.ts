@@ -371,6 +371,19 @@ export async function getApp(): Promise<express.Express> {
     next();
   });
 
+  // Alias middleware for API paths to ensure compatibility with both /api/login and /api/auth/login
+  app.use((req, res, next) => {
+    const urlPath = req.url.split("?")[0];
+    if (urlPath === "/api/login" || urlPath === "/api/login/") {
+      req.url = req.url.replace("/api/login", "/api/auth/login");
+    } else if (urlPath === "/api/signup" || urlPath === "/api/signup/") {
+      req.url = req.url.replace("/api/signup", "/api/auth/signup");
+    } else if (urlPath === "/api/me" || urlPath === "/api/me/") {
+      req.url = req.url.replace("/api/me", "/api/auth/me");
+    }
+    next();
+  });
+
   // Use JSON payload size limit for high resolution policy photo uploads
   app.use(express.json({ limit: "15mb" }));
   app.use(express.urlencoded({ limit: "15mb", extended: true }));
