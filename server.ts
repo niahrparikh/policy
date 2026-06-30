@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+dotenv.config();
+dotenv.config({ path: ".env.local" });
+
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -5,6 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
 
 // Initialize Gemini SDK with telemetry header
 const ai = new GoogleGenAI({
@@ -80,121 +85,255 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function loadDB(): DB {
-  if (!fs.existsSync(DB_FILE)) {
-    // Generate default DB structure with a seed user
-    const hashedDemoPassword = bcrypt.hashSync("password123", 10);
-    const today = new Date();
-    const expiry = new Date();
-    expiry.setDate(today.getDate() + 15);
+// Initialize Supabase Client (supporting secret keys and anon keys with proper fallback)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
-    const defaultDB: DB = {
-      users: [
-        {
-          id: "demo-user-id",
-          name: "Demo Agent",
-          email: "agent@policysync.in",
-          password_hash: hashedDemoPassword,
-          role: "Agent",
-          agency_name: "Sync Protection Group",
-          whatsapp_number: "+919876543210",
-          subscription_status: "trial",
-          trial_start_date: today.toISOString().split("T")[0],
-          trial_end_date: expiry.toISOString().split("T")[0],
-          razorpay_subscription_id: "",
-          created_at: today.toISOString(),
-        },
-      ],
-      clients: [
-        {
-          id: "demo-client-1",
-          user_id: "demo-user-id",
-          full_name: "Amit Sharma",
-          phone: "+919812345678",
-          email: "amit.sharma@example.com",
-          address: "102, Shanti Vihar, Sector 4, Gurgaon, Haryana",
-          pan_number: "ABCPS1234D",
-          aadhaar_number: "1234-5678-9012",
-          nominee_name: "Suman Sharma (Wife)",
-          notes: "Prefers updates via WhatsApp in the mornings.",
-          created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: "demo-client-2",
-          user_id: "demo-user-id",
-          full_name: "Priya Patel",
-          phone: "+919922334455",
-          email: "priya.patel@example.com",
-          address: "A-405, Neelkanth Heights, Thane West, Mumbai",
-          pan_number: "XYZPK9876Q",
-          aadhaar_number: "9876-5432-1098",
-          nominee_name: "Rohan Patel (Son)",
-          notes: "Requested a health insurance cover update.",
-          created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-      policies: [
-        {
-          id: "demo-policy-1",
-          user_id: "demo-user-id",
-          client_id: "demo-client-1",
-          policy_type: "Term Life Insurance",
-          insurance_company: "HDFC Ergo",
-          policy_number: "TL-89472-A",
-          premium_amount: 15400,
-          payment_frequency: "Yearly",
-          start_date: "2025-07-07",
-          expiry_date: "2026-07-07", // Expiry in 7 days (near current local date June 30, 2026)
-          renewal_date: "2026-07-07",
-          commission_percentage: 15,
-          document_url: "",
-          extracted_data_json: "{}",
-          status: "Pending Renewal",
-          created_at: new Date(Date.now() - 360 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-        {
-          id: "demo-policy-2",
-          user_id: "demo-user-id",
-          client_id: "demo-client-2",
-          policy_type: "Family Floater Health",
-          insurance_company: "Star Health Insurance",
-          policy_number: "SH-90321-B",
-          premium_amount: 24500,
-          payment_frequency: "Yearly",
-          start_date: "2025-07-30",
-          expiry_date: "2026-07-30", // Expiry in 30 days
-          renewal_date: "2026-07-30",
-          commission_percentage: 12,
-          document_url: "",
-          extracted_data_json: "{}",
-          status: "Active",
-          created_at: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-    };
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2));
-    return defaultDB;
+// High performance cached in-memory database
+let cachedDB: DB | null = null;
+
+function generateSeedDB(): DB {
+  const hashedDemoPassword = bcrypt.hashSync("password123", 10);
+  const today = new Date();
+  const expiry = new Date();
+  expiry.setDate(today.getDate() + 15);
+
+  return {
+    users: [
+      {
+        id: "demo-user-id",
+        name: "Demo Agent",
+        email: "agent@policysync.in",
+        password_hash: hashedDemoPassword,
+        role: "Agent",
+        agency_name: "Sync Protection Group",
+        whatsapp_number: "+919876543210",
+        subscription_status: "trial",
+        trial_start_date: today.toISOString().split("T")[0],
+        trial_end_date: expiry.toISOString().split("T")[0],
+        razorpay_subscription_id: "",
+        created_at: today.toISOString(),
+      },
+    ],
+    clients: [
+      {
+        id: "demo-client-1",
+        user_id: "demo-user-id",
+        full_name: "Amit Sharma",
+        phone: "+919812345678",
+        email: "amit.sharma@example.com",
+        address: "102, Shanti Vihar, Sector 4, Gurgaon, Haryana",
+        pan_number: "ABCPS1234D",
+        aadhaar_number: "1234-5678-9012",
+        nominee_name: "Suman Sharma (Wife)",
+        notes: "Prefers updates via WhatsApp in the mornings.",
+        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "demo-client-2",
+        user_id: "demo-user-id",
+        full_name: "Priya Patel",
+        phone: "+919922334455",
+        email: "priya.patel@example.com",
+        address: "A-405, Neelkanth Heights, Thane West, Mumbai",
+        pan_number: "XYZPK9876Q",
+        aadhaar_number: "9876-5432-1098",
+        nominee_name: "Rohan Patel (Son)",
+        notes: "Requested a health insurance cover update.",
+        created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
+    policies: [
+      {
+        id: "demo-policy-1",
+        user_id: "demo-user-id",
+        client_id: "demo-client-1",
+        policy_type: "Term Life Insurance",
+        insurance_company: "HDFC Ergo",
+        policy_number: "TL-89472-A",
+        premium_amount: 15400,
+        payment_frequency: "Yearly",
+        start_date: "2025-07-07",
+        expiry_date: "2026-07-07", // Expiry in 7 days (near current local date June 30, 2026)
+        renewal_date: "2026-07-07",
+        commission_percentage: 15,
+        document_url: "",
+        extracted_data_json: "{}",
+        status: "Pending Renewal",
+        created_at: new Date(Date.now() - 360 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "demo-policy-2",
+        user_id: "demo-user-id",
+        client_id: "demo-client-2",
+        policy_type: "Family Floater Health",
+        insurance_company: "Star Health Insurance",
+        policy_number: "SH-90321-B",
+        premium_amount: 24500,
+        payment_frequency: "Yearly",
+        start_date: "2025-07-30",
+        expiry_date: "2026-07-30", // Expiry in 30 days
+        renewal_date: "2026-07-30",
+        commission_percentage: 12,
+        document_url: "",
+        extracted_data_json: "{}",
+        status: "Active",
+        created_at: new Date(Date.now() - 330 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
+  };
+}
+
+function loadLocalDB(): DB {
+  if (fs.existsSync(DB_FILE)) {
+    try {
+      const data = fs.readFileSync(DB_FILE, "utf-8");
+      return JSON.parse(data);
+    } catch (e) {
+      console.error("Error reading local db.json:", e);
+    }
   }
+  const seed = generateSeedDB();
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
+  } catch (err) {
+    console.error("Error writing initial local seed:", err);
+  }
+  return seed;
+}
+
+async function initializeDatabase() {
+  if (!supabase) {
+    console.log("Supabase client is not configured. Standard local JSON file database loaded.");
+    cachedDB = loadLocalDB();
+    return;
+  }
+
+  console.log("Initializing database connection with Supabase...");
 
   try {
-    const data = fs.readFileSync(DB_FILE, "utf-8");
-    return JSON.parse(data);
+    // 1. Try fetching from Supabase Table "policysync_state"
+    const { data: tableData, error: tableError } = await supabase
+      .from("policysync_state")
+      .select("value")
+      .eq("id", "db_json")
+      .maybeSingle();
+
+    if (!tableError && tableData?.value) {
+      cachedDB = tableData.value as DB;
+      console.log("Successfully loaded database from Supabase Table 'policysync_state'!");
+      fs.writeFileSync(DB_FILE, JSON.stringify(cachedDB, null, 2));
+      return;
+    }
+
+    if (tableError) {
+      console.log("Supabase table query returned error (table might not exist yet):", tableError.message);
+    }
+
+    // 2. Fallback to Supabase Storage bucket 'database'
+    console.log("Trying Supabase Storage bucket 'database'...");
+    try {
+      const { data: fileData, error: fileError } = await supabase.storage
+        .from("database")
+        .download("db.json");
+
+      if (!fileError && fileData) {
+        const text = await fileData.text();
+        cachedDB = JSON.parse(text);
+        console.log("Successfully loaded database from Supabase Storage bucket 'database'!");
+        fs.writeFileSync(DB_FILE, JSON.stringify(cachedDB, null, 2));
+        return;
+      } else if (fileError) {
+        console.log("Supabase storage query returned error:", fileError.message);
+      }
+    } catch (storageErr) {
+      console.error("Failed to read from Supabase Storage:", storageErr);
+    }
+
+    // 3. Complete Fallback: Load from local JSON and try to write it to Supabase so it is synchronized
+    console.log("Could not find database state in Supabase. Loading from local database...");
+    cachedDB = loadLocalDB();
+
+    // Try to sync/upsert to Supabase so next time it is loaded from Supabase
+    await persistToSupabase(cachedDB);
   } catch (err) {
-    console.error("Error reading database file, returning empty structure:", err);
-    return { users: [], clients: [], policies: [] };
+    console.error("Unexpected error during Supabase initialization. Falling back to local db.json:", err);
+    cachedDB = loadLocalDB();
   }
+}
+
+async function persistToSupabase(data: DB) {
+  if (!supabase) return;
+
+  // 1. Try saving to Supabase Table "policysync_state"
+  try {
+    const { error: tableError } = await supabase
+      .from("policysync_state")
+      .upsert({ id: "db_json", value: data, updated_at: new Date().toISOString() });
+
+    if (!tableError) {
+      console.log("Successfully persisted database to Supabase Table 'policysync_state'!");
+      return;
+    } else {
+      console.log("Failed to persist to table (may not exist), trying Storage:", tableError.message);
+    }
+  } catch (err) {
+    console.warn("Table persistence exception, trying storage fallback:", err);
+  }
+
+  // 2. Try saving to Supabase Storage bucket
+  try {
+    // Create the bucket (safe to call even if it already exists)
+    await supabase.storage.createBucket("database", { public: false }).catch(() => {});
+    
+    // Upload the file
+    const fileBuffer = Buffer.from(JSON.stringify(data, null, 2));
+    const { error: storageError } = await supabase.storage
+      .from("database")
+      .upload("db.json", fileBuffer, {
+        contentType: "application/json",
+        upsert: true,
+      });
+
+    if (!storageError) {
+      console.log("Successfully persisted database to Supabase Storage bucket 'database'!");
+    } else {
+      console.error("Failed to persist database to Supabase Storage:", storageError.message);
+    }
+  } catch (err) {
+    console.error("Storage persistence exception:", err);
+  }
+}
+
+function loadDB(): DB {
+  if (cachedDB) {
+    return cachedDB;
+  }
+  return loadLocalDB();
 }
 
 function saveDB(data: DB) {
+  cachedDB = data;
+  
+  // Write to local file synchronously as a backup
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error("Error writing to database file:", err);
+    console.error("Error writing to local database backup file:", err);
   }
+
+  // Async upload to Supabase
+  persistToSupabase(data).catch((err) => {
+    console.error("Failed to persist database to Supabase asynchronously:", err);
+  });
 }
 
 async function startServer() {
+  // Sync live state from Supabase on startup
+  await initializeDatabase();
+
   const app = express();
   const PORT = 3000;
 
