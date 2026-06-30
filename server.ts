@@ -330,12 +330,20 @@ function saveDB(data: DB) {
   });
 }
 
-async function startServer() {
-  // Sync live state from Supabase on startup
-  await initializeDatabase();
+let expressAppInstance: express.Express | null = null;
+let databaseInitialized = false;
+
+export async function getApp(): Promise<express.Express> {
+  if (expressAppInstance) {
+    return expressAppInstance;
+  }
+
+  if (!databaseInitialized) {
+    await initializeDatabase();
+    databaseInitialized = true;
+  }
 
   const app = express();
-  const PORT = 3000;
 
   // Enable CORS for all origins and headers to allow external clients like Vercel
   app.use((req, res, next) => {
@@ -1115,27 +1123,34 @@ Guidelines:
     });
   });
 
-  // --- DEV / PRODUCTION INTEGRATION WITH VITE ---
-
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`policysync.in server running securely on http://localhost:${PORT}`);
-  });
+  expressAppInstance = app;
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error("Critical: Failed to launch full-stack Express server:", err);
-});
+const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
+
+if (!isVercel) {
+  const PORT = process.env.PORT || 3000;
+  getApp().then(async (app) => {
+    // --- DEV / PRODUCTION INTEGRATION WITH VITE ---
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(Number(PORT), "0.0.0.0", () => {
+      console.log(`policysync.in server running securely on http://localhost:${PORT}`);
+    });
+  }).catch((err) => {
+    console.error("Critical: Failed to launch full-stack Express server:", err);
+  });
+}
