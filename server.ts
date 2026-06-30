@@ -10,15 +10,25 @@ import bcrypt from "bcryptjs";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
-// Initialize Gemini SDK with telemetry header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Initialize Gemini SDK lazily with telemetry header to prevent crashes at module load
+let aiInstance: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is required but missing");
+    }
+    aiInstance = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiInstance;
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || "policysync-super-secret-key-2026";
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -870,7 +880,7 @@ Please ensure the response matches the provided schema perfectly.`;
         },
       };
 
-      const response = await ai.models.generateContent({
+      const response = await getGeminiClient().models.generateContent({
         model: "gemini-3.5-flash",
         contents: [imagePart, { text: promptText }],
         config: {
@@ -950,7 +960,7 @@ Guidelines:
 4. Always end by signing off professionally on behalf of "${agencyName}".
 5. Never output instructions, conversational preambles, or brackets. Only output the actual message text ready to copy or send.`;
 
-      const response = await ai.models.generateContent({
+      const response = await getGeminiClient().models.generateContent({
         model: "gemini-3.5-flash",
         contents: promptText,
       });
@@ -1137,7 +1147,8 @@ if (!isVercel) {
   getApp().then(async (app) => {
     // --- DEV / PRODUCTION INTEGRATION WITH VITE ---
     if (process.env.NODE_ENV !== "production") {
-      const { createServer: createViteServer } = await import("vite");
+      const viteModuleName = "vite";
+      const { createServer: createViteServer } = await import(viteModuleName);
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
