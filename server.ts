@@ -7,7 +7,6 @@ import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
@@ -24,6 +23,16 @@ const ai = new GoogleGenAI({
 const JWT_SECRET = process.env.JWT_SECRET || "policysync-super-secret-key-2026";
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
+
+const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
+
+function safeWriteDBFile(data: any) {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error("Warning: Could not write database backup file locally:", err);
+  }
+}
 
 // Define schema interfaces for JSON DB
 interface User {
@@ -81,8 +90,12 @@ interface DB {
 }
 
 // Ensure database directory and file exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!isVercel && !fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (err) {
+    console.error("Warning: Could not create DATA_DIR locally:", err);
+  }
 }
 
 // Initialize Supabase Client (supporting secret keys and anon keys with proper fallback)
@@ -196,11 +209,7 @@ function loadLocalDB(): DB {
     }
   }
   const seed = generateSeedDB();
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
-  } catch (err) {
-    console.error("Error writing initial local seed:", err);
-  }
+  safeWriteDBFile(seed);
   return seed;
 }
 
@@ -224,7 +233,7 @@ async function initializeDatabase() {
     if (!tableError && tableData?.value) {
       cachedDB = tableData.value as DB;
       console.log("Successfully loaded database from Supabase Table 'policysync_state'!");
-      fs.writeFileSync(DB_FILE, JSON.stringify(cachedDB, null, 2));
+      safeWriteDBFile(cachedDB);
       return;
     }
 
@@ -243,7 +252,7 @@ async function initializeDatabase() {
         const text = await fileData.text();
         cachedDB = JSON.parse(text);
         console.log("Successfully loaded database from Supabase Storage bucket 'database'!");
-        fs.writeFileSync(DB_FILE, JSON.stringify(cachedDB, null, 2));
+        safeWriteDBFile(cachedDB);
         return;
       } else if (fileError) {
         console.log("Supabase storage query returned error:", fileError.message);
@@ -318,11 +327,7 @@ function saveDB(data: DB) {
   cachedDB = data;
   
   // Write to local file synchronously as a backup
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error("Error writing to local database backup file:", err);
-  }
+  safeWriteDBFile(data);
 
   // Async upload to Supabase
   persistToSupabase(data).catch((err) => {
@@ -1127,13 +1132,12 @@ Guidelines:
   return app;
 }
 
-const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
-
 if (!isVercel) {
   const PORT = process.env.PORT || 3000;
   getApp().then(async (app) => {
     // --- DEV / PRODUCTION INTEGRATION WITH VITE ---
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
