@@ -1,0 +1,6 @@
+{
+  "name": "policysync.in",
+  "description": "AI-powered CRM and automation platform for Indian insurance agents to scan policies, track renewals, and send automated WhatsApp messages.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
